@@ -21,28 +21,39 @@
                       "..85...1."
                       ".9....4.."))
 
-(defn parse-sudoku [sudoku-string]
+(defn parse-row [cs]
   (let [replacements [1 2 3 4 5 6 7 8 9]]
     (mapv (fn [c]
             (if (= c \. )
               replacements
-              (- (int c) 48))) sudoku-string)))
+              (- (int c) 48)))
+          cs)))
 
-(defn print-sudoku [sudoku]
-  (->> sudoku
-       (map (fn [cell] (if (vector? cell) "." (str cell))))
-       (partition-all 9)
-       (map (partial string/join " "))
-       (run! prn)))
+(defn parse-sudoku [sudoku-string]
+  (->> sudoku-string
+       (partition 9)
+       (mapv parse-row)))
 
-(defn debug-sudoku [sudoku]
-  (->> sudoku
+(defn row->debug-string [row]
+  (->> row
        (map (fn [cell] (if (vector? cell)
                          (format "[%-9s]" (string/join cell))
                          (format "%-11s" cell ""))))
-       (partition-all 9)
-       (map (partial string/join " "))
+       (string/join " ")))
+
+(defn row->string [row]
+  (->> row
+       (map (fn [cell] (if (vector? cell) "." (str cell))))
+       (string/join " ")))
+
+(defn print-sudoku [row-fn sudoku]
+  (->> sudoku
+       (map row-fn)
        (run! prn)))
+
+(def debug! (partial print-sudoku row->debug-string))
+
+(def print! (partial print-sudoku row->string))
 
 (defn process-row [row]
   (let [fixed (set (filter int? row))]
@@ -52,49 +63,46 @@
               (filterv (comp not fixed) cell)))
           row)))
 
-(defn transpose [xs]
-  (apply mapv vector xs))
+(defn process-rows [sudoku]
+  (mapv process-row sudoku))
+
+(defn transpose [sudoku]
+  (apply mapv vector sudoku))
 
 (defn process-columns [suduko]
   (->> suduko
-       (partition-all 9)
        transpose
        (mapv process-row)
-       transpose
-       (apply concat)
-       vec))
+       transpose))
 
-(defn process-rows [sudoku]
-  (->> sudoku
-       (partition-all 9)
-       (mapv process-row)
-       (apply concat)
-       vec))
-
+;; todo: move all sub-grid logic in here...
 (defn sub-grids-to-rows [rows]
   (let [rows* (map (partial partition 3) rows)]
     (apply map concat rows*)))
 
 (defn process-groups [sudoku]
   (->> sudoku
-       (partition 9)
        (partition 3)
        (mapcat sub-grids-to-rows)
        (mapv process-row)
        (partition 3)
        (mapcat sub-grids-to-rows)
-       (apply concat)
-       vec))
+       (mapv vec)))
 
 (defn solved? [sudoku]
-  (every? int? sudoku))
+  (->> sudoku (apply concat) (every? int?)))
 
 (defn legal-state? [sudoku]
-  (every? #(or (int? %) (seq %)) sudoku))
+  (->> sudoku (apply concat) (every? #(or (int? %) (seq %)))))
 
+;; todo: ?
 (defn candidates [sudoku]
-  (let [idx (count (take-while int? sudoku))]
-    (map #(assoc sudoku idx %) (get sudoku idx))))
+  (let [[i j] (reduce (fn [i row]
+                        (if (not-every? int? row)
+                          (reduced [i (count (take-while int? row))])
+                          (inc i)))
+                      0 sudoku)]
+    (map #(assoc-in sudoku [i j] %) (get-in sudoku [i j]))))
 
 (defn solve [sudoku]
   (cond
